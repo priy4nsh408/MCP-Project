@@ -24,12 +24,23 @@ class AccountService:
         return account
 
     def get_account_transactions(
-        self, account_id: int, limit: int | None = None, offset: int = 0
+        self,
+        account_id: int,
+        limit: int | None = None,
+        offset: int = 0,
+        transaction_type: str | None = None,
+        spending_category: str | None = None,
+        payment_channel: str | None = None,
     ):
         self.validate_pagination(limit, offset)
         self.get_account(account_id)
         return self.transaction_repository.get_account_transactions(
-            account_id, limit=limit, offset=offset
+            account_id,
+            limit=limit,
+            offset=offset,
+            transaction_type=transaction_type,
+            spending_category=spending_category,
+            payment_channel=payment_channel,
         )
 
     def get_account_summary(self, account_id: int) -> AccountSummary:

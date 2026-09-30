@@ -1,26 +1,37 @@
+import os
 from pathlib import Path
-import sqlite3
 
-from sqlalchemy import create_engine, event
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from .base import Base
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATABASE_PATH = PROJECT_ROOT / "database" / "banking.db"
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+load_dotenv()
 
-engine = create_engine(DATABASE_URL, future=True)
+
+def _database_url() -> str:
+    configured_url = os.getenv("DATABASE_URL")
+    if configured_url:
+        return configured_url
+
+    if not os.getenv("POSTGRES_PASSWORD"):
+        project_root = Path(__file__).resolve().parent.parent
+        return f"sqlite:///{project_root / 'database' / 'banking.db'}"
+
+    return (
+        "postgresql+psycopg://"
+        f"{os.getenv('POSTGRES_USER', 'postgres')}:{os.getenv('POSTGRES_PASSWORD', '')}"
+        f"@{os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')}"
+        f"/{os.getenv('POSTGRES_DB', 'banking')}"
+    )
+
+
+DATABASE_URL = _database_url()
+
+engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True)
 session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-
-@event.listens_for(engine, "connect")
-def enable_sqlite_foreign_keys(dbapi_connection: sqlite3.Connection, connection_record: object) -> None:
-    del connection_record
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
 
 
 def create_schema() -> None:

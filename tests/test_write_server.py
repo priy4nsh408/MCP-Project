@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database.base import Base
-from database.models import Account, AuditLog, Customer, Transaction
+from database.models import Account, AdminDetail, AuditLog, Customer, Transaction
 from services.write_service import WriteService
 from servers import write_server
 
@@ -21,6 +21,9 @@ def build_write_session_factory() -> sessionmaker:
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory.begin() as session:
+        session.add(
+            AdminDetail(email="admin@example.com", password="admin-password")
+        )
         session.add(Customer(customer_id=1, customer_name="Test Customer", branch="Delhi"))
         session.add(
             Account(
@@ -45,14 +48,14 @@ def build_write_session_factory() -> sessionmaker:
 
 
 def call_tool(name: str, arguments: dict):
+    arguments.setdefault("email", "admin@example.com")
+    arguments.setdefault("password", "admin-password")
     return asyncio.run(write_server.handle_call_tool(name, arguments))
 
 
 def test_write_server_authentication_authorization_and_confirmation(monkeypatch) -> None:
     factory = build_write_session_factory()
     monkeypatch.setattr(write_server, "write_service", WriteService(factory))
-    monkeypatch.setenv("BANKING_WRITE_TOKEN", "test-token")
-    monkeypatch.setenv("BANKING_WRITE_ACTOR", "test-user")
     monkeypatch.setenv("BANKING_WRITE_ROLE", "writer")
 
     created = call_tool(
@@ -92,25 +95,24 @@ def test_write_server_authentication_authorization_and_confirmation(monkeypatch)
 def test_write_server_authentication_and_rollback(monkeypatch) -> None:
     factory = build_write_session_factory()
     monkeypatch.setattr(write_server, "write_service", WriteService(factory))
-    monkeypatch.setenv("BANKING_WRITE_TOKEN", "test-token")
-    monkeypatch.setenv("BANKING_WRITE_ACTOR", "test-user")
     monkeypatch.setenv("BANKING_WRITE_ROLE", "writer")
 
-    monkeypatch.delenv("BANKING_WRITE_TOKEN")
+    unauthenticated_arguments = {
+        "account_id": 10,
+        "transaction_date": "2025-02-01",
+        "spending_category": "Dining",
+        "payment_channel": "UPI",
+        "transaction_type": "Debit",
+        "transaction_amount": 10.25,
+        "email": "admin@example.com",
+    }
+    unauthenticated_arguments["password"] = "wrong-password"
     unauthenticated = call_tool(
         "create_transaction",
-        {
-            "account_id": 10,
-            "transaction_date": "2025-02-01",
-            "spending_category": "Dining",
-            "payment_channel": "UPI",
-            "transaction_type": "Debit",
-            "transaction_amount": 10.25,
-        },
+        unauthenticated_arguments,
     )
     assert unauthenticated.structuredContent["error"]["code"] == "AUTHENTICATION_FAILED"
 
-    monkeypatch.setenv("BANKING_WRITE_TOKEN", "test-token")
     failed = call_tool(
         "create_transaction",
         {

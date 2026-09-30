@@ -24,6 +24,12 @@ EXPECTED_COLUMNS = {
     },
 }
 
+SHEET_TABLES = {
+    "Sheet01": "customers",
+    "Sheet02": "accounts",
+    "Sheet3": "transactions",
+}
+
 
 def _read_sheet(path: Path, sheet_name: str, expected_columns: set[str]) -> pd.DataFrame:
     frame = pd.read_excel(path, sheet_name=sheet_name, header=1)
@@ -62,10 +68,14 @@ def _money(value: object, field_name: str) -> Decimal:
 
 
 def import_workbook(workbook_path: Path) -> tuple[int, int, int]:
-    customers = _read_sheet(workbook_path, "Sheet01", EXPECTED_COLUMNS["customers"])
-    accounts = _read_sheet(workbook_path, "Sheet02", EXPECTED_COLUMNS["accounts"])
+    customers = _read_sheet(
+        workbook_path, "Sheet01", EXPECTED_COLUMNS[SHEET_TABLES["Sheet01"]]
+    )
+    accounts = _read_sheet(
+        workbook_path, "Sheet02", EXPECTED_COLUMNS[SHEET_TABLES["Sheet02"]]
+    )
     transactions = _read_sheet(
-        workbook_path, "Sheet3", EXPECTED_COLUMNS["transactions"]
+        workbook_path, "Sheet3", EXPECTED_COLUMNS[SHEET_TABLES["Sheet3"]]
     )
 
     create_schema()
@@ -110,7 +120,9 @@ def import_workbook(workbook_path: Path) -> tuple[int, int, int]:
 
 
 def main() -> None:
-    parser = ArgumentParser(description="Import the banking Excel dataset into SQLite.")
+    parser = ArgumentParser(
+        description="Import each banking Excel sheet into its PostgreSQL table."
+    )
     parser.add_argument(
         "--workbook",
         type=Path,

@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -32,6 +31,8 @@ def _transaction_properties(required: list[str]) -> dict[str, Any]:
             "transaction_type": {"type": "string", "enum": ["Debit", "Credit"]},
             "transaction_amount": {"type": "number", "exclusiveMinimum": 0},
             "confirmation": {"type": "string"},
+            "email": {"type": "string", "format": "email"},
+            "password": {"type": "string", "format": "password"},
         },
         "required": required,
     }
@@ -62,7 +63,9 @@ async def list_tools() -> list[types.Tool]:
         types.Tool(
             name="delete_transaction",
             description="Permanently delete one transaction. Requires authenticated admin access and explicit confirmation.",
-            inputSchema=_transaction_properties(["transaction_id", "confirmation"]),
+            inputSchema=_transaction_properties(
+                ["transaction_id", "confirmation"]
+            ),
         ),
     ]
 
@@ -95,7 +98,11 @@ def _parse_amount(value: Any) -> Decimal:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any] | types.CallToolResult:
     try:
-        principal = authenticate(os.environ.get("BANKING_WRITE_TOKEN"))
+        principal = authenticate(
+            arguments.get("email"),
+            arguments.get("password"),
+            write_service.session_factory,
+        )
         if name == "create_transaction":
             return write_service.create_transaction(
                 principal,

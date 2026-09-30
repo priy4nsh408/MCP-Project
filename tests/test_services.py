@@ -76,6 +76,10 @@ def test_account_service_calculates_spending_and_summary() -> None:
     assert summary.top_spending_categories[0].category == "Groceries"
     assert customer_service.get_customer_summary(1).account_count == 1
     assert len(transaction_service.get_customer_transactions(1)) == 1
+    summary = transaction_service.get_transaction_summary(
+        date(2025, 1, 1), date(2025, 1, 1)
+    )
+    assert summary["total_transaction_amount"] == Decimal("25.50")
 
     session.close()
 
@@ -89,5 +93,7 @@ def test_services_raise_domain_errors_and_validate_pagination() -> None:
         account_service.get_account_transactions(10, limit=0)
     with pytest.raises(ValidationError):
         transaction_service.get_customer_transactions(1, offset=-1)
+    with pytest.raises(ValidationError):
+        transaction_service.get_transaction_summary(date(2025, 2, 1), date(2025, 1, 1))
 
     session.close()

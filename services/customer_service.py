@@ -26,14 +26,40 @@ class CustomerService:
             raise CustomerNotFoundError(f"Customer {customer_id} was not found")
         return customer
 
-    def find_customers_by_name(self, name: str):
-        if not name or not name.strip():
+    def find_customers(
+        self,
+        name: str | None = None,
+        branch: str | None = None,
+        limit: int | None = None,
+    ):
+        if name is not None and not name.strip():
             raise ValidationError("customer name must not be blank")
-        return self.customer_repository.search_customers(name=name.strip())
+        if branch is not None and not branch.strip():
+            raise ValidationError("branch must not be blank")
+        self.validate_pagination(limit, 0)
+        return self.customer_repository.search_customers(
+            name=name.strip() if name else None,
+            branch=branch.strip() if branch else None,
+            limit=limit,
+        )
 
-    def get_customer_accounts(self, customer_id: int):
+    def find_customers_by_name(self, name: str):
+        return self.find_customers(name=name)
+
+    def get_customer_accounts(
+        self, customer_id: int, account_type: str | None = None, limit: int | None = None
+    ):
         self.get_customer(customer_id)
-        return self.account_repository.get_customer_accounts(customer_id)
+        self.validate_pagination(limit, 0)
+        if account_type is not None and not account_type.strip():
+            raise ValidationError("account_type must not be blank")
+        if account_type is None and limit is None:
+            return self.account_repository.get_customer_accounts(customer_id)
+        return self.account_repository.search_accounts(
+            customer_id=customer_id,
+            account_type=account_type.strip() if account_type else None,
+            limit=limit,
+        )
 
     def get_customer_summary(self, customer_id: int) -> CustomerSummary:
         customer = self.get_customer(customer_id)

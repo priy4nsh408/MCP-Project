@@ -90,31 +90,42 @@ def _summary_dict(summary: Any) -> dict[str, Any]:
 
 @mcp.tool()
 def get_customer(
-    customer_id: int | None = None, name: str | None = None
+    customer_id: int | None = None,
+    name: str | None = None,
+    branch: str | None = None,
+    limit: int | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]]:
-    """Return customer details by ID or matching name; provide exactly one."""
+    """Return a customer by ID or filtered matching customers. Read-only."""
     try:
         with service_bundle() as (customer_service, _, _):
-            if customer_id is not None and name is not None:
-                raise ValueError("provide customer_id or name, not both")
+            if customer_id is not None and any(
+                value is not None for value in (name, branch, limit)
+            ):
+                raise ValueError("customer_id cannot be combined with filters")
             if customer_id is not None:
                 return _customer_dict(customer_service.get_customer(customer_id))
-            if name is None:
-                raise ValueError("customer_id or name is required")
-            customers = customer_service.find_customers_by_name(name)
+            if name is None and branch is None:
+                raise ValueError("customer_id, name, or branch is required")
+            customers = customer_service.find_customers(
+                name=name, branch=branch, limit=limit
+            )
             return [_customer_dict(c) for c in customers]
     except BankingError as error:
         raise _error_message(error) from error
 
 
 @mcp.tool()
-def get_customer_accounts(customer_id: int) -> list[dict[str, Any]]:
-    """Return all accounts belonging to a customer. Read-only."""
+def get_customer_accounts(
+    customer_id: int, account_type: str | None = None, limit: int | None = None
+) -> list[dict[str, Any]]:
+    """Return a customer's accounts with optional type and count filters."""
     try:
         with service_bundle() as (customer_service, _, _):
             return [
                 _account_dict(account)
-                for account in customer_service.get_customer_accounts(customer_id)
+                for account in customer_service.get_customer_accounts(
+                    customer_id, account_type=account_type, limit=limit
+                )
             ]
     except BankingError as error:
         raise _error_message(error) from error
@@ -132,15 +143,23 @@ def get_account(account_id: int) -> dict[str, Any]:
 
 @mcp.tool()
 def get_account_transactions(
-    account_id: int, limit: int = 100, offset: int = 0
+    account_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    transaction_type: str | None = None,
+    spending_category: str | None = None,
+    payment_channel: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return dated transactions for an account with pagination. Read-only."""
+    """Return filtered, dated transactions for an account. Read-only."""
     try:
         with service_bundle() as (_, account_service, _):
             return [
                 _transaction_dict(transaction)
                 for transaction in account_service.get_account_transactions(
-                    account_id, limit=limit, offset=offset
+                    account_id, limit=limit, offset=offset,
+                    transaction_type=transaction_type,
+                    spending_category=spending_category,
+                    payment_channel=payment_channel,
                 )
             ]
     except BankingError as error:
@@ -149,17 +168,63 @@ def get_account_transactions(
 
 @mcp.tool()
 def get_customer_transactions(
-    customer_id: int, limit: int = 100, offset: int = 0
+    customer_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    transaction_type: str | None = None,
+    spending_category: str | None = None,
+    payment_channel: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return all customer transactions across accounts with pagination. Read-only."""
+    """Return filtered customer transactions with pagination. Read-only."""
     try:
         with service_bundle() as (_, _, transaction_service):
             return [
                 _transaction_dict(transaction)
                 for transaction in transaction_service.get_customer_transactions(
-                    customer_id, limit=limit, offset=offset
+                    customer_id, limit=limit, offset=offset,
+                    transaction_type=transaction_type,
+                    spending_category=spending_category,
+                    payment_channel=payment_channel,
                 )
             ]
+    except BankingError as error:
+        raise _error_message(error) from error
+
+
+@mcp.tool()
+def transaction_summary(
+    start_date: str, end_date: str, transaction_type: str | None = None
+) -> dict[str, Any]:
+    """Return transaction totals for an inclusive date range, optionally filtered by type."""
+    try:
+        from datetime import date
+
+        parsed_start_date = date.fromisoformat(start_date)
+        parsed_end_date = date.fromisoformat(end_date)
+        with service_bundle() as (_, _, transaction_service):
+            summary = transaction_service.get_transaction_summary(
+                parsed_start_date, parsed_end_date, transaction_type=transaction_type
+            )
+            result = {
+                **summary,
+                "total_transaction_amount": _decimal(
+                    summary["total_transaction_amount"]
+                ),
+            }
+            result["by_transaction_type"] = {
+                transaction_kind: {
+                    "transaction_count": values["transaction_count"],
+                    "total_transaction_amount": _decimal(
+                        values["total_transaction_amount"]
+                    ),
+                }
+                for transaction_kind, values in summary["by_transaction_type"].items()
+            }
+            return result
+    except ValueError as error:
+        if isinstance(error, BankingError):
+            raise _error_message(error) from error
+        raise ValueError("start_date and end_date must use YYYY-MM-DD") from error
     except BankingError as error:
         raise _error_message(error) from error
 

@@ -1,6 +1,6 @@
 # Banking MCP Server
 
-A teaching-oriented banking system built with Python, SQLite, SQLAlchemy, and
+A teaching-oriented banking system built with Python, PostgreSQL, SQLAlchemy, and
 the MCP Python SDK.
 
 The project deliberately separates read and write capabilities:
@@ -10,7 +10,7 @@ MCP Client
 ├── FastMCP Read Server
 └── Low-Level Write Server
         │
-        └── Shared Services → Shared Repositories → SQLite
+        └── Shared Services → Shared Repositories → PostgreSQL
 ```
 
 The LLM is not part of either server. An MCP client discovers tools, sends
@@ -50,8 +50,8 @@ repositories/
 
 database/
     models.py            Customers, accounts, transactions, audit logs
-    connection.py        SQLite engine and foreign-key configuration
-    initialize.py        Excel-to-SQLite import
+    connection.py        PostgreSQL engine and environment configuration
+    initialize.py        Excel-to-PostgreSQL import, one table per sheet
 
 security/
     authentication.py    Process-level write authentication adapter
@@ -69,22 +69,28 @@ Install dependencies:
 python -m pip install -r requirements.txt
 ```
 
+Copy `.env.example` to `.env` and fill in the PostgreSQL fields. The `.env`
+file is ignored by Git and loaded automatically at startup. PostgreSQL is used
+when `DATABASE_URL` or `POSTGRES_PASSWORD` is configured; without either, the
+test/dev fallback is the ignored local SQLite file.
+
 The original workbook is located at:
 
 ```text
 dataset/banking_dataset_final.xlsx
 ```
 
-Initialize or refresh the SQLite database:
+Initialize or refresh the PostgreSQL database:
 
 ```powershell
 python -m database.initialize
 ```
 
-This imports 50 customers, 75 accounts, and 4,500 transactions. The import
-replaces the three source tables inside one transaction, so use it for initial
-dataset loading or deliberate dataset refreshes, not as a production
-migration mechanism.
+This imports 50 customers, 75 accounts, and 4,500 transactions. `Sheet01`,
+`Sheet02`, and `Sheet3` are imported into separate `customers`, `accounts`, and
+`transactions` tables. The import replaces those three tables’ rows inside one
+transaction, so use it for initial dataset loading or deliberate dataset
+refreshes, not as a production migration mechanism.
 
 ## Run the Read Server
 
@@ -103,11 +109,11 @@ mutate data.
 
 ## Run the Write Server
 
-Configure the process environment first. Do not commit real secrets.
+Configure the authorization role first. Do not commit real secrets. Every
+write tool call must also include the admin `email` and `password`; these are
+checked against the `Admin_details` table on every request.
 
 ```powershell
-$env:BANKING_WRITE_TOKEN="replace-with-a-secret"
-$env:BANKING_WRITE_ACTOR="operator-1"
 $env:BANKING_WRITE_ROLE="writer"
 python -m servers.write_server
 ```
@@ -119,8 +125,6 @@ When using the Ollama agent, set these variables in the same PowerShell window
 before starting the agent. The MCP write subprocess inherits that environment:
 
 ```powershell
-$env:BANKING_WRITE_TOKEN="local-development-secret"
-$env:BANKING_WRITE_ACTOR="operator-1"
 $env:BANKING_WRITE_ROLE="writer"
 python -m llm.ollama_agent
 ```
@@ -135,10 +139,10 @@ Roles:
 
 Deletion requires the exact confirmation value `CONFIRM_DELETE`.
 
-The current authentication adapter is process-level and intended for local
-learning. Production deployments should replace it with per-client identity
-verification, short-lived credentials, secret management, and transport
-security.
+The write authentication query matches `Admin_details.email` and verifies the
+provided password against `Admin_details.password`. Use hashed passwords in
+production and protect the MCP transport; credentials are never written to
+audit logs.
 
 ## Run the Dual Client Demo
 
@@ -169,7 +173,7 @@ python -m llm.ollama_agent
 
 The agent sends MCP tool schemas to Mistral, executes the selected tool through
 the appropriate MCP server, and sends the structured result back to Mistral.
-Mistral never receives direct SQLite access. Set `OLLAMA_HOST` only when the
+Mistral never receives direct database access. Set `OLLAMA_HOST` only when the
 Ollama service is running somewhere other than `http://localhost:11434`.
 
 For write requests, configure the write-server environment variables described
@@ -199,7 +203,7 @@ audit_logs records successful and failed write attempts.
 ```
 
 Primary keys are `customer_id`, `account_id`, and `transaction_id`. Foreign
-keys are enforced by SQLite. Monetary values are stored as fixed-scale numeric
+keys are enforced by PostgreSQL. Monetary values are stored as fixed-scale numeric
 values and serialized as decimal strings at the MCP boundary to avoid floating
 point precision loss.
 

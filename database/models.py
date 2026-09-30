@@ -18,6 +18,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 
+class AdminDetail(Base):
+    __tablename__ = "Admin_details"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    password: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
